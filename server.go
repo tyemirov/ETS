@@ -4,19 +4,16 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"strings"
 	"time"
 )
 
-func newReverseProxy(gatewayConfig serverConfig) *httputil.ReverseProxy {
-	reverseProxy := httputil.NewSingleHostReverseProxy(gatewayConfig.UpstreamBaseURL)
+func newReverseProxy(route upstreamRouteConfig) *httputil.ReverseProxy {
+	reverseProxy := httputil.NewSingleHostReverseProxy(route.UpstreamBaseURL)
 	originalDirector := reverseProxy.Director
 	reverseProxy.Director = func(incomingRequest *http.Request) {
 		originalDirector(incomingRequest)
-		if gatewayConfig.UpstreamSecretKey != "" {
-			queryValues := incomingRequest.URL.Query()
-			queryValues.Set("key", gatewayConfig.UpstreamSecretKey)
-			incomingRequest.URL.RawQuery = queryValues.Encode()
-		}
+		applyUpstreamCredentials(incomingRequest, route.Credentials)
 	}
 	reverseProxy.ErrorHandler = func(httpResponseWriter http.ResponseWriter, httpRequest *http.Request, proxyError error) {
 		log.Printf("reverse proxy error: %v", proxyError)
@@ -25,10 +22,23 @@ func newReverseProxy(gatewayConfig serverConfig) *httputil.ReverseProxy {
 	return reverseProxy
 }
 
-func newHTTPServer(gatewayConfig serverConfig) *http.Server {
-	// reverse proxy (base origin only, no path)
-	upstreamReverseProxy := newReverseProxy(gatewayConfig)
+func applyUpstreamCredentials(incomingRequest *http.Request, credentials upstreamCredentials) {
+	if len(credentials.QueryParameters) > 0 {
+		queryValues := incomingRequest.URL.Query()
+		for key, value := range credentials.QueryParameters {
+			queryValues.Set(key, value)
+		}
+		incomingRequest.URL.RawQuery = queryValues.Encode()
+	}
+	for key, value := range credentials.HeaderValues {
+		incomingRequest.Header.Set(key, value)
+	}
+	if credentials.BearerToken != "" {
+		incomingRequest.Header.Set(headerAuthorization, "Bearer "+credentials.BearerToken)
+	}
+}
 
+func newHTTPServer(gatewayConfig serverConfig) *http.Server {
 	replayCacheStore := &replayStore{seen: make(map[string]int64)}
 	rateLimiterWindow := &windowLimiter{
 		windowEnd:    timeNow().Unix() + 60,
@@ -41,11 +51,13 @@ func newHTTPServer(gatewayConfig serverConfig) *http.Server {
 	httpServerMux.HandleFunc("/tvm/issue", func(httpResponseWriter http.ResponseWriter, httpRequest *http.Request) {
 		handleTokenIssue(httpResponseWriter, httpRequest, gatewayConfig)
 	})
-	protectedProxyHandler := func(httpResponseWriter http.ResponseWriter, httpRequest *http.Request) {
-		handleProtectedProxy(httpResponseWriter, httpRequest, gatewayConfig, replayCacheStore, rateLimiterWindow, upstreamReverseProxy)
+	for _, route := range gatewayConfig.UpstreamRoutes {
+		upstreamReverseProxy := newReverseProxy(route)
+		handler := http.HandlerFunc(func(httpResponseWriter http.ResponseWriter, httpRequest *http.Request) {
+			handleProtectedProxy(httpResponseWriter, httpRequest, gatewayConfig, replayCacheStore, rateLimiterWindow, upstreamReverseProxy)
+		})
+		registerProxyRoute(httpServerMux, route.PublicPath, handler)
 	}
-	httpServerMux.HandleFunc("/api", protectedProxyHandler)
-	httpServerMux.HandleFunc("/api/", protectedProxyHandler)
 	httpServerMux.HandleFunc("/health", handleHealth)
 
 	return &http.Server{
@@ -55,6 +67,17 @@ func newHTTPServer(gatewayConfig serverConfig) *http.Server {
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+	}
+}
+
+func registerProxyRoute(mux *http.ServeMux, publicPath string, handler http.Handler) {
+	if publicPath == "/" {
+		mux.Handle(publicPath, handler)
+		return
+	}
+	mux.Handle(publicPath, handler)
+	if !strings.HasSuffix(publicPath, "/") {
+		mux.Handle(publicPath+"/", handler)
 	}
 }
 
