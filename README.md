@@ -48,7 +48,7 @@ ETS ── Origin + rate + JWT + DPoP ───────► reverse-proxy to 
 
 ## Quick start (Docker Compose)
 
-> **Important:** `UPSTREAM_BASE_URL` is the **base origin only** (no path). ETS preserves `/api`.
+> **Important:** Describe every upstream via `UPSTREAM_ROUTES`. Each entry defines the **public path prefix** (e.g., `/api`, `/tiles`) and the upstream **base origin** (no path). ETS preserves whatever path/query the browser sends relative to that prefix. When `UPSTREAM_ROUTES` is omitted, ETS falls back to the legacy single `/api` route powered by `UPSTREAM_BASE_URL` + `UPSTREAM_SERVICE_SECRET`.
 
 ```yaml
 version: "3.9"
@@ -61,7 +61,16 @@ services:
       ORIGIN_ALLOWLIST: "https://loopaware.mprlab.com"
       TOKEN_LIFETIME_SECONDS: "300"
       TVM_JWT_HS256_KEY: "replace-with-strong-32B-secret"
-      UPSTREAM_BASE_URL: "https://llm-proxy.mprlab.com"  # base origin ONLY
+      UPSTREAM_ROUTES: |
+        [
+          {
+            "publicPath": "/api",
+            "upstreamBaseUrl": "https://llm-proxy.mprlab.com",
+            "credentials": {
+              "query": {"key": "replace-with-llm-proxy-service-secret"}
+            }
+          }
+        ]
       RATE_LIMIT_PER_MINUTE: "60"
       UPSTREAM_TIMEOUT_SECONDS: "40"
 
@@ -71,8 +80,10 @@ services:
 ```
 
 Run `./bin/ets generate-jwt-key` (or the container equivalent) to populate
-`TVM_JWT_HS256_KEY`. Provision `UPSTREAM_SERVICE_SECRET` separately (for
-example, `openssl rand -hex 32`) so ETS can authenticate to the upstream.
+`TVM_JWT_HS256_KEY`. Add upstream credentials directly inside the `UPSTREAM_ROUTES`
+JSON (e.g., `"query": {"key": "..."}`, `"headers": {"X-App": "ets"}`, or
+`"bearerToken": "..."`). The legacy `UPSTREAM_SERVICE_SECRET` environment variable
+still injects a `key` query parameter when `UPSTREAM_ROUTES` is not defined.
 
 **Run as a binary (no container):**
 
@@ -82,7 +93,7 @@ LISTEN_ADDR=":8080" \
 ORIGIN_ALLOWLIST="https://loopaware.mprlab.com" \
 TOKEN_LIFETIME_SECONDS="300" \
 TVM_JWT_HS256_KEY="replace-with-strong-32B-secret" \
-UPSTREAM_BASE_URL="https://llm-proxy.mprlab.com" \
+UPSTREAM_ROUTES='[{"publicPath":"/api","upstreamBaseUrl":"https://llm-proxy.mprlab.com","credentials":{"query":{"key":"replace-with-llm-proxy-service-secret"}}}]' \
 RATE_LIMIT_PER_MINUTE="60" \
 UPSTREAM_TIMEOUT_SECONDS="40" \
 ./bin/ets
@@ -99,7 +110,7 @@ docker run --rm \
   -e LISTEN_ADDR=":8080" \
   -e ORIGIN_ALLOWLIST="https://loopaware.mprlab.com" \
   -e TVM_JWT_HS256_KEY="replace-with-strong-32B-secret" \
-  -e UPSTREAM_BASE_URL="https://llm-proxy.mprlab.com" \
+  -e UPSTREAM_ROUTES='[{"publicPath":"/api","upstreamBaseUrl":"https://llm-proxy.mprlab.com"}]' \
   ghcr.io/tyemirov/ets:latest
 ```
 
@@ -117,8 +128,8 @@ go build -o bin/ets .
 ```
 
 The command prints `TVM_JWT_HS256_KEY=<hex>`; copy it into your environment or
-`.env` files. Generate `UPSTREAM_SERVICE_SECRET` using your preferred tooling
-and keep it in sync with the upstream deployment. You can also invoke
+`.env` files. Supply per-upstream credentials through `UPSTREAM_ROUTES` (see
+below) or keep using `UPSTREAM_SERVICE_SECRET` for single-route deployments. You can also invoke
 `./bin/ets serve`; running the binary without arguments still starts the
 server.
 

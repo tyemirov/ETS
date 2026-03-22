@@ -31,7 +31,7 @@ func TestHandleProtectedProxy_InvalidDpopDoesNotMarkReplayCache(t *testing.T) {
 		AllowedOrigins:     map[string]struct{}{"https://app.example.com": {}},
 		TokenLifetime:      5 * time.Minute,
 		JwtHmacKey:         tokenSigningKey,
-		UpstreamBaseURL:    upstreamURL,
+		UpstreamRoutes:     []upstreamRouteConfig{newTestRoute(upstreamURL, "/api")},
 		RateLimitPerMinute: 100,
 		UpstreamTimeout:    10 * time.Second,
 	}
@@ -76,7 +76,7 @@ func TestHandleProtectedProxy_AllowsMultipleRequestsWithSameTokenAndDistinctDpop
 		AllowedOrigins:     map[string]struct{}{"https://app.example.com": {}},
 		TokenLifetime:      5 * time.Minute,
 		JwtHmacKey:         tokenSigningKey,
-		UpstreamBaseURL:    upstreamURL,
+		UpstreamRoutes:     []upstreamRouteConfig{newTestRoute(upstreamURL, "/api")},
 		RateLimitPerMinute: 100,
 		UpstreamTimeout:    10 * time.Second,
 	}
@@ -164,7 +164,7 @@ func TestHandleProtectedProxy_AllowsGetRequests(t *testing.T) {
 		AllowedOrigins:     map[string]struct{}{"https://app.example.com": {}},
 		TokenLifetime:      5 * time.Minute,
 		JwtHmacKey:         tokenSigningKey,
-		UpstreamBaseURL:    upstreamURL,
+		UpstreamRoutes:     []upstreamRouteConfig{newTestRoute(upstreamURL, "/api")},
 		RateLimitPerMinute: 100,
 		UpstreamTimeout:    10 * time.Second,
 	}
