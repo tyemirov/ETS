@@ -24,7 +24,7 @@ func TestHandleTokenIssue_PostsJwtWithValidDpop(t *testing.T) {
 		AllowedOrigins:     map[string]struct{}{"https://app.example.com": {}},
 		TokenLifetime:      5 * time.Minute,
 		JwtHmacKey:         []byte("0123456789abcdef0123456789abcdef"),
-		UpstreamBaseURL:    upstreamURL,
+		UpstreamRoutes:     []upstreamRouteConfig{newTestRoute(upstreamURL, "/api")},
 		RateLimitPerMinute: 100,
 		UpstreamTimeout:    10 * time.Second,
 	}
@@ -75,7 +75,7 @@ func TestHandleTokenIssue_RejectsNonPost(t *testing.T) {
 		AllowedOrigins:     map[string]struct{}{"https://app.example.com": {}},
 		TokenLifetime:      5 * time.Minute,
 		JwtHmacKey:         []byte("abcdef0123456789abcdef0123456789"),
-		UpstreamBaseURL:    upstreamURL,
+		UpstreamRoutes:     []upstreamRouteConfig{newTestRoute(upstreamURL, "/api")},
 		RateLimitPerMinute: 100,
 		UpstreamTimeout:    10 * time.Second,
 	}
